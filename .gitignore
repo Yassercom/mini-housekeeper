@@ -1,0 +1,10 @@
+# Node.js
+node_modules
+.env
+
+# SQLite
+*.db
+*.db-journal
+
+# Vite
+client/dist
