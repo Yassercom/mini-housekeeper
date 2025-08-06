@@ -1,86 +1,57 @@
-const FindHousekeeper = () => {
-  const housekeepers = [
-    {
-      id: 1,
-      name: "Sarah Johnson",
-      location: "Downtown, New York",
-      rating: 4.9,
-      reviews: 127,
-      services: ["Cleaning", "Cooking"],
-      experience: "5 years",
-      hourlyRate: 45,
-      avatar: "https://images.unsplash.com/photo-1494790108755-2616b612b786?w=150&h=150&fit=crop&crop=face",
-      verified: true,
-      available: true
-    },
-    {
-      id: 2,
-      name: "Maria Rodriguez",
-      location: "Brooklyn, New York",
-      rating: 4.8,
-      reviews: 89,
-      services: ["Babysitting", "Light Cleaning"],
-      experience: "3 years",
-      hourlyRate: 35,
-      avatar: "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=150&h=150&fit=crop&crop=face",
-      verified: true,
-      available: true
-    },
-    {
-      id: 3,
-      name: "Jennifer Chen",
-      location: "Queens, New York",
-      rating: 5.0,
-      reviews: 203,
-      services: ["Deep Cleaning", "Organization"],
-      experience: "7 years",
-      hourlyRate: 55,
-      avatar: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150&h=150&fit=crop&crop=face",
-      verified: true,
-      available: false
-    },
-    {
-      id: 4,
-      name: "David Thompson",
-      location: "Manhattan, New York",
-      rating: 4.7,
-      reviews: 156,
-      services: ["Cooking", "Meal Prep"],
-      experience: "4 years",
-      hourlyRate: 50,
-      avatar: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face",
-      verified: true,
-      available: true
-    },
-    {
-      id: 5,
-      name: "Lisa Park",
-      location: "Bronx, New York",
-      rating: 4.9,
-      reviews: 94,
-      services: ["Elderly Care", "Companionship"],
-      experience: "6 years",
-      hourlyRate: 40,
-      avatar: "https://images.unsplash.com/photo-1489424731084-a5d8b219a5bb?w=150&h=150&fit=crop&crop=face",
-      verified: true,
-      available: true
-    },
-    {
-      id: 6,
-      name: "Michael Brown",
-      location: "Staten Island, New York",
-      rating: 4.6,
-      reviews: 72,
-      services: ["Pet Care", "Dog Walking"],
-      experience: "2 years",
-      hourlyRate: 30,
-      avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&h=150&fit=crop&crop=face",
-      verified: true,
-      available: true
-    }
-  ]
+import { useState, useEffect } from 'react'
+import { housekeepersAPI } from '../services/api'
 
-  const renderStars = (rating: number) => {
+interface Housekeeper {
+  id: number;
+  name: string;
+  location: string;
+  rating?: number;
+  reviews?: number;
+  services: string[];
+  experience: string;
+  hourly_rate: number;
+  photo_url?: string;
+  bio?: string;
+  approved_at: string;
+  created_at: string;
+  email: string;
+  phone: string;
+}
+
+const FindHousekeeper = () => {
+  const [housekeepers, setHousekeepers] = useState<Housekeeper[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
+
+  useEffect(() => {
+    const fetchHousekeepers = async () => {
+      try {
+        setIsLoading(true);
+        const response = await housekeepersAPI.getAll();
+        setHousekeepers(response.data);
+        setError(null);
+      } catch (err: any) {
+        setError(err.response?.data?.message || 'Failed to load housekeepers. Please try again.');
+        console.error('Error fetching housekeepers:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchHousekeepers();
+  }, []);
+
+  // Filter housekeepers based on search term
+  const filteredHousekeepers = housekeepers.filter(housekeeper => 
+    housekeeper.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    housekeeper.location.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    housekeeper.services.some(service => 
+      service.toLowerCase().includes(searchTerm.toLowerCase())
+    )
+  );
+
+  const renderStars = (rating: number = 4.5) => {
     return Array.from({ length: 5 }, (_, index) => (
       <svg
         key={index}
@@ -92,6 +63,28 @@ const FindHousekeeper = () => {
       </svg>
     ))
   }
+
+  const getDefaultAvatar = (name: string) => {
+    // Generate a random but consistent color based on name
+    const hash = name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    const hue = hash % 360;
+    const color = `hsl(${hue}, 70%, 80%)`;
+    
+    // Get initials
+    const initials = name.split(' ')
+      .map(part => part.charAt(0).toUpperCase())
+      .slice(0, 2)
+      .join('');
+      
+    return (
+      <div 
+        className="w-16 h-16 rounded-full flex items-center justify-center text-xl font-bold" 
+        style={{ backgroundColor: color }}
+      >
+        {initials}
+      </div>
+    );
+  };
 
   return (
     <div className="min-h-screen bg-gray-50 py-12">
@@ -108,73 +101,99 @@ const FindHousekeeper = () => {
           {/* Search and Filter Bar */}
           <div className="max-w-4xl mx-auto bg-white rounded-lg shadow-lg p-6">
             <div className="grid md:grid-cols-4 gap-4">
-              <div>
+              <div className="md:col-span-2">
                 <input
                   type="text"
-                  placeholder="Search by name..."
+                  placeholder="Search by name, location or service..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
               <div>
                 <select className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-                  <option>All Locations</option>
-                  <option>Manhattan</option>
-                  <option>Brooklyn</option>
-                  <option>Queens</option>
-                  <option>Bronx</option>
-                  <option>Staten Island</option>
+                  <option value="">All locations</option>
+                  <option value="downtown">Downtown</option>
+                  <option value="uptown">Uptown</option>
+                  <option value="suburban">Suburban</option>
                 </select>
               </div>
               <div>
                 <select className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-                  <option>All Services</option>
-                  <option>Cleaning</option>
-                  <option>Cooking</option>
-                  <option>Babysitting</option>
-                  <option>Elderly Care</option>
-                  <option>Pet Care</option>
+                  <option value="">All services</option>
+                  <option value="cleaning">Cleaning</option>
+                  <option value="cooking">Cooking</option>
+                  <option value="childcare">Childcare</option>
+                  <option value="eldercare">Elderly Care</option>
                 </select>
-              </div>
-              <div>
-                <button className="w-full bg-blue-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-blue-700 transition-colors">
-                  Search
-                </button>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Results Count */}
-        <div className="mb-8">
-          <p className="text-gray-600">
-            Showing {housekeepers.length} housekeepers in your area
-          </p>
-        </div>
+        {/* Error Message */}
+        {error && (
+          <div className="max-w-4xl mx-auto mb-8 bg-red-50 border-l-4 border-red-500 p-4 rounded-md">
+            <div className="flex">
+              <div className="flex-shrink-0">
+                <svg className="h-5 w-5 text-red-400" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <div className="ml-3">
+                <p className="text-sm text-red-700">{error}</p>
+              </div>
+            </div>
+          </div>
+        )}
 
-        {/* Housekeepers Grid */}
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
-          {housekeepers.map((housekeeper) => (
-            <div
-              key={housekeeper.id}
-              className="bg-white rounded-xl shadow-lg hover:shadow-xl transition-shadow duration-300 overflow-hidden"
-            >
+        {/* Loading State */}
+        {isLoading && (
+          <div className="flex justify-center items-center py-12">
+            <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-blue-500"></div>
+          </div>
+        )}
+
+        {/* No Results */}
+        {!isLoading && filteredHousekeepers.length === 0 && (
+          <div className="text-center py-12">
+            <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M12 14h.01M12 17h.01M12 7a2 2 0 100-4 2 2 0 000 4z" />
+            </svg>
+            <h3 className="mt-2 text-lg font-medium text-gray-900">No housekeepers found</h3>
+            <p className="mt-1 text-sm text-gray-500">
+              {searchTerm ? 'Try a different search term or filter.' : 'There are no approved housekeepers at the moment.'}
+            </p>
+          </div>
+        )}
+
+        {/* Housekeepers Cards */}
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
+          {!isLoading && filteredHousekeepers.map((housekeeper) => (
+            <div key={housekeeper.id} className="bg-white rounded-lg shadow-lg overflow-hidden">
               <div className="p-6">
-                {/* Header with Avatar and Status */}
-                <div className="flex items-start justify-between mb-4">
+                {/* Header */}
+                <div className="flex justify-between items-start mb-4">
                   <div className="flex items-center">
                     <div className="relative">
-                      <img
-                        src={housekeeper.avatar}
-                        alt={housekeeper.name}
-                        className="w-16 h-16 rounded-full object-cover"
-                      />
-                      {housekeeper.verified && (
-                        <div className="absolute -top-1 -right-1 w-6 h-6 bg-blue-600 rounded-full flex items-center justify-center">
-                          <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                          </svg>
-                        </div>
+                      {housekeeper.photo_url ? (
+                        <img
+                          src={housekeeper.photo_url}
+                          alt={housekeeper.name}
+                          className="w-16 h-16 rounded-full object-cover"
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none';
+                            e.currentTarget.parentElement!.innerHTML = getDefaultAvatar(housekeeper.name).props.outerHTML;
+                          }}
+                        />
+                      ) : (
+                        getDefaultAvatar(housekeeper.name)
                       )}
+                      <div className="absolute -top-1 -right-1 w-6 h-6 bg-blue-600 rounded-full flex items-center justify-center">
+                        <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                      </div>
                     </div>
                     <div className="ml-4">
                       <h3 className="text-xl font-semibold text-gray-900">
@@ -185,22 +204,18 @@ const FindHousekeeper = () => {
                       </p>
                     </div>
                   </div>
-                  <div className={`px-2 py-1 rounded-full text-xs font-medium ${
-                    housekeeper.available 
-                      ? 'bg-green-100 text-green-800' 
-                      : 'bg-red-100 text-red-800'
-                  }`}>
-                    {housekeeper.available ? 'Available' : 'Busy'}
+                  <div className="px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                    Available
                   </div>
                 </div>
 
                 {/* Rating */}
                 <div className="flex items-center mb-4">
                   <div className="flex items-center">
-                    {renderStars(housekeeper.rating)}
+                    {renderStars(housekeeper.rating || 4.5)}
                   </div>
                   <span className="ml-2 text-sm text-gray-600">
-                    {housekeeper.rating} ({housekeeper.reviews} reviews)
+                    {housekeeper.rating || 4.5} ({housekeeper.reviews || 'New'})
                   </span>
                 </div>
 
@@ -227,7 +242,7 @@ const FindHousekeeper = () => {
                   </div>
                   <div className="text-right">
                     <p className="text-sm text-gray-600">Hourly Rate</p>
-                    <p className="font-semibold text-blue-600">${housekeeper.hourlyRate}/hr</p>
+                    <p className="font-semibold text-blue-600">${housekeeper.hourly_rate}/hr</p>
                   </div>
                 </div>
 
@@ -246,11 +261,13 @@ const FindHousekeeper = () => {
         </div>
 
         {/* Load More */}
-        <div className="text-center mt-12">
-          <button className="bg-gray-200 text-gray-700 px-8 py-3 rounded-lg font-semibold hover:bg-gray-300 transition-colors">
-            Load More Housekeepers
-          </button>
-        </div>
+        {!isLoading && filteredHousekeepers.length > 6 && (
+          <div className="text-center mt-12">
+            <button className="bg-gray-200 text-gray-700 px-8 py-3 rounded-lg font-semibold hover:bg-gray-300 transition-colors">
+              Load More Housekeepers
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )
