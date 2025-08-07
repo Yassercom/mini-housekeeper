@@ -65,14 +65,29 @@ router.post('/', validateRequest(housekeeperRegistrationSchema), async (req, res
   }
 });
 
-// GET /api/housekeepers - Get all approved housekeepers
+// GET /api/housekeepers - Get all approved housekeepers with advanced filtering
 router.get('/', async (req, res) => {
   try {
-    const { location, service, minRate, maxRate, experience } = req.query;
+    // Vérifier si la table housekeepers existe
+    const tableCheck = await query(
+      "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'housekeepers')"
+    );
+    
+    // Si la table n'existe pas, retourner une liste vide au lieu d'une erreur
+    if (!tableCheck.rows[0].exists) {
+      return res.json({
+        success: true,
+        message: 'No housekeepers found',
+        data: [],
+        count: 0
+      });
+    }
+    
+    const { region, service, minRating, maxRate, search, location, experience } = req.query;
     
     let queryText = `
-      SELECT id, name, email, phone, location, experience, hourly_rate, 
-             photo_url, bio, services, created_at, approved_at
+      SELECT id, name, email, phone, location, region, experience, hourly_rate, 
+             photo_url, bio, services, created_at, approved_at, rating
       FROM housekeepers 
       WHERE status = 'approved'
     `;
@@ -80,31 +95,49 @@ router.get('/', async (req, res) => {
     const queryParams = [];
     let paramCount = 0;
 
-    // Add filters
-    if (location) {
+    // Add filters - region (zone/quartier)
+    if (region) {
       paramCount++;
-      queryText += ` AND location ILIKE $${paramCount}`;
+      queryText += ` AND (region ILIKE $${paramCount} OR location ILIKE $${paramCount})`;
+      queryParams.push(`%${region}%`);
+    }
+    
+    // Legacy location filter (backward compatibility)
+    else if (location) {
+      paramCount++;
+      queryText += ` AND (region ILIKE $${paramCount} OR location ILIKE $${paramCount})`;
       queryParams.push(`%${location}%`);
     }
 
+    // Filter by service
     if (service) {
       paramCount++;
       queryText += ` AND $${paramCount} = ANY(services)`;
       queryParams.push(service);
     }
-
-    if (minRate) {
+    
+    // Filter by minimum rating
+    if (minRating) {
       paramCount++;
-      queryText += ` AND hourly_rate >= $${paramCount}`;
-      queryParams.push(parseFloat(minRate));
+      queryText += ` AND rating >= $${paramCount}`;
+      queryParams.push(parseFloat(minRating));
     }
 
+    // Filter by maximum hourly rate
     if (maxRate) {
       paramCount++;
       queryText += ` AND hourly_rate <= $${paramCount}`;
       queryParams.push(parseFloat(maxRate));
     }
+    
+    // Search by name (text libre)
+    if (search) {
+      paramCount++;
+      queryText += ` AND name ILIKE $${paramCount}`;
+      queryParams.push(`%${search}%`);
+    }
 
+    // Filter by experience (backward compatibility)
     if (experience) {
       paramCount++;
       queryText += ` AND experience = $${paramCount}`;

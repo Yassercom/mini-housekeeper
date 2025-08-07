@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { housekeepersAPI } from '../services/api'
+import { FaMapMarkerAlt, FaClock, FaChevronDown, FaChevronUp, FaStar, FaMoneyBillWave } from 'react-icons/fa'
 
 interface Housekeeper {
   id: number;
@@ -23,47 +24,88 @@ const FindHousekeeper = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [failedImages, setFailedImages] = useState<Record<number, boolean>>({});
+  const [showAdvancedSearch, setShowAdvancedSearch] = useState(false);
+  const [regionFilter, setRegionFilter] = useState('');
+  const [serviceFilter, setServiceFilter] = useState('');
+  const [minRatingFilter, setMinRatingFilter] = useState(0);
+  const [maxRateFilter, setMaxRateFilter] = useState(100);
+  const [searchFilter, setSearchFilter] = useState('');
 
-  useEffect(() => {
-    const fetchHousekeepers = async () => {
-      try {
-        setIsLoading(true);
-        const response = await housekeepersAPI.getAll();
-        setHousekeepers(response.data);
-        setError(null);
-      } catch (err: any) {
-        setError(err.response?.data?.message || 'Failed to load housekeepers. Please try again.');
-        console.error('Error fetching housekeepers:', err);
-      } finally {
-        setIsLoading(false);
+  // Fonction pour récupérer les housekeepers avec filtres
+  const fetchHousekeepers = async () => {
+    try {
+      setIsLoading(true);
+      
+      // D'abord, vérifier s'il y a des housekeepers approuvés dans la base
+      const allHousekeepersData = await housekeepersAPI.getAll({});
+      
+      // Si la base ne contient aucun housekeeper approuvé
+      if (Array.isArray(allHousekeepersData) && allHousekeepersData.length === 0) {
+        setHousekeepers([]);
+        setError("Il n'existe aucun housekeeper approuvé dans notre base de données.");
+        return;
       }
-    };
 
+      // Si des housekeepers existent, appliquer les filtres
+      const housekeepersData = await housekeepersAPI.getAll({
+        region: regionFilter || undefined,
+        service: serviceFilter || undefined,
+        minRating: minRatingFilter > 0 ? minRatingFilter : undefined,
+        maxRate: maxRateFilter < 100 ? maxRateFilter : undefined,
+        search: searchFilter || undefined
+      });
+      
+      // Vérifier si nous avons reçu un tableau
+      if (Array.isArray(housekeepersData)) {
+        setHousekeepers(housekeepersData);
+        // Si le tableau est vide avec des filtres appliqués
+        if (housekeepersData.length === 0) {
+          setError("Aucun housekeeper ne correspond à vos critères de recherche");
+        } else {
+          setError(null);
+        }
+      } else {
+        console.log('API returned unexpected data type:', housekeepersData);
+        setHousekeepers([]);
+        setError("Format de données inattendu. Veuillez réessayer.");
+      }
+      
+    } catch (err: any) {
+      // En cas d'erreur de connexion ou serveur, masquer les messages techniques
+      setHousekeepers([]);
+      setError("Impossible de récupérer les housekeepers. Veuillez vérifier votre connexion et réessayer.");
+      console.error('Error fetching housekeepers:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Appliquer la recherche avancée
+  const applyFilters = (e: React.FormEvent) => {
+    e.preventDefault();
+    fetchHousekeepers();
+  };
+
+  // Recherche initiale au chargement de la page
+  useEffect(() => {
     fetchHousekeepers();
   }, []);
 
-  // Filter housekeepers based on search term
-  const filteredHousekeepers = housekeepers.filter(housekeeper => 
-    housekeeper.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    housekeeper.location.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    housekeeper.services.some(service => 
-      service.toLowerCase().includes(searchTerm.toLowerCase())
-    )
-  );
+  // Le filtrage est maintenant géré côté backend via l'API
+  // Pour le filtrage local (searchTerm), nous le conservons uniquement pour la rétro-compatibilité
+  const filteredHousekeepers = Array.isArray(housekeepers) 
+    ? housekeepers.filter((housekeeper) => {
+        return searchTerm
+          ? housekeeper.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            housekeeper.location.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            (housekeeper.services && housekeeper.services.some(service => 
+              service.toLowerCase().includes(searchTerm.toLowerCase())))
+          : true;
+      })
+    : [];
 
-  const renderStars = (rating: number = 4.5) => {
-    return Array.from({ length: 5 }, (_, index) => (
-      <svg
-        key={index}
-        className={`w-4 h-4 ${index < Math.floor(rating) ? 'text-yellow-400' : 'text-gray-300'}`}
-        fill="currentColor"
-        viewBox="0 0 20 20"
-      >
-        <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-      </svg>
-    ))
-  }
-
+  // Générer un avatar par défaut avec les initiales et une couleur de fond basée sur le nom
   const getDefaultAvatar = (name: string) => {
     // Generate a random but consistent color based on name
     const hash = name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
@@ -86,6 +128,14 @@ const FindHousekeeper = () => {
     );
   };
 
+  // Gestion des erreurs de chargement d'images
+  const handleImageError = (id: number) => {
+    setFailedImages(prev => ({
+      ...prev,
+      [id]: true
+    }));
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 py-12">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -100,52 +150,184 @@ const FindHousekeeper = () => {
           
           {/* Search and Filter Bar */}
           <div className="max-w-4xl mx-auto bg-white rounded-lg shadow-lg p-6">
-            <div className="grid md:grid-cols-4 gap-4">
-              <div className="md:col-span-2">
-                <input
-                  type="text"
-                  placeholder="Search by name, location or service..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-              </div>
-              <div>
-                <select className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-                  <option value="">All locations</option>
-                  <option value="downtown">Downtown</option>
-                  <option value="uptown">Uptown</option>
-                  <option value="suburban">Suburban</option>
-                </select>
-              </div>
-              <div>
-                <select className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-                  <option value="">All services</option>
-                  <option value="cleaning">Cleaning</option>
-                  <option value="cooking">Cooking</option>
-                  <option value="childcare">Childcare</option>
-                  <option value="eldercare">Elderly Care</option>
-                </select>
-              </div>
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-semibold text-gray-800">Search Housekeepers</h2>
+              <button
+                type="button"
+                onClick={() => setShowAdvancedSearch(!showAdvancedSearch)}
+                className="flex items-center text-blue-600 hover:text-blue-800 transition-colors"
+              >
+                {showAdvancedSearch ? (
+                  <>
+                    <span>Simple Search</span>
+                    <FaChevronUp className="ml-1" />
+                  </>
+                ) : (
+                  <>
+                    <span>Advanced Search</span>
+                    <FaChevronDown className="ml-1" />
+                  </>
+                )}
+              </button>
             </div>
+            
+            <form onSubmit={applyFilters} className="bg-white rounded-lg p-4 shadow-sm">
+              {/* Mode de recherche simple */}
+              {!showAdvancedSearch ? (
+                <div className="grid md:grid-cols-3 gap-4">
+                  <div className="md:col-span-2">
+                    <div className="flex">
+                      <select
+                        value={regionFilter}
+                        onChange={(e) => setRegionFilter(e.target.value)}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-l-lg focus:ring-2 focus:ring-green-500 focus:border-transparent text-gray-700"
+                      >
+                        <option value="">Select a zone/neighborhood</option>
+                        <option value="downtown">Downtown</option>
+                        <option value="uptown">Uptown</option>
+                        <option value="midtown">Midtown</option>
+                        <option value="westside">West Side</option>
+                        <option value="eastside">East Side</option>
+                        <option value="suburban">Suburban Area</option>
+                      </select>
+                      <button 
+                        type="submit"
+                        disabled={isLoading}
+                        className="px-6 py-2 rounded-r-full bg-green-500 text-white hover:bg-green-600 transition-colors flex items-center"
+                      >
+                        {isLoading ? (
+                          <span className="inline-block w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></span>
+                        ) : (
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                          </svg>
+                        )}
+                        {isLoading ? 'Searching...' : 'Search'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                /* Mode de recherche avancée */
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {/* Région/Zone */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Zone</label>
+                    <select
+                      value={regionFilter}
+                      onChange={(e) => setRegionFilter(e.target.value)}
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent text-gray-700"
+                    >
+                      <option value="">Select a zone/neighborhood</option>
+                      <option value="downtown">Downtown</option>
+                      <option value="uptown">Uptown</option>
+                      <option value="midtown">Midtown</option>
+                      <option value="westside">West Side</option>
+                      <option value="eastside">East Side</option>
+                      <option value="suburban">Suburban Area</option>
+                    </select>
+                  </div>
+                  
+                  {/* Service */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Service</label>
+                    <select
+                      value={serviceFilter}
+                      onChange={(e) => setServiceFilter(e.target.value)}
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent text-gray-700"
+                    >
+                      <option value="">All services</option>
+                      <option value="cleaning">Cleaning</option>
+                      <option value="cooking">Cooking</option>
+                      <option value="childcare">Childcare</option>
+                      <option value="eldercare">Elderly Care</option>
+                    </select>
+                  </div>
+                  
+                  {/* Rating Minimum */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Min Rating: {minRatingFilter}
+                    </label>
+                    <div className="px-2">
+                      <input
+                        type="range"
+                        min="0"
+                        max="5"
+                        step="0.5"
+                        value={minRatingFilter}
+                        onChange={(e) => setMinRatingFilter(parseFloat(e.target.value))}
+                        className="w-full accent-green-500"
+                      />
+                      <div className="flex justify-between text-xs text-gray-500 mt-1">
+                        <span>0</span>
+                        <span>5</span>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Prix Maximum */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Max Hourly Rate: ${maxRateFilter}
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={maxRateFilter}
+                      onChange={(e) => setMaxRateFilter(parseInt(e.target.value))}
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent text-gray-700"
+                    />
+                  </div>
+                  
+                  {/* Recherche par nom */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Name</label>
+                    <input
+                      type="text"
+                      placeholder="Search by name"
+                      value={searchFilter}
+                      onChange={(e) => setSearchFilter(e.target.value)}
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent text-gray-700"
+                    />
+                  </div>
+                  
+                  {/* Bouton d'application des filtres */}
+                  <div className="lg:col-span-3 mt-4">
+                    <button 
+                      type="submit"
+                      disabled={isLoading}
+                      className="w-full px-6 py-3 rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors flex items-center justify-center font-medium shadow-md"
+                    >
+                      {isLoading ? (
+                        <span className="inline-block w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></span>
+                      ) : (
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        </svg>
+                      )}
+                      {isLoading ? 'Searching...' : 'Apply Filters'}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </form>
           </div>
+          
+          {/* Messages d'erreur ou de résultat vide */}
+          {error && (
+            <div className="mt-4 p-4 bg-red-100 text-red-700 rounded-lg">
+              <p>{error}</p>
+            </div>
+          )}
+          
+          {!isLoading && filteredHousekeepers.length === 0 && !error && (
+            <div className="mt-4 p-4 bg-yellow-50 text-yellow-800 rounded-lg">
+              <p>No housekeepers found matching your criteria. Please try different filters.</p>
+            </div>
+          )}
         </div>
-
-        {/* Error Message */}
-        {error && (
-          <div className="max-w-4xl mx-auto mb-8 bg-red-50 border-l-4 border-red-500 p-4 rounded-md">
-            <div className="flex">
-              <div className="flex-shrink-0">
-                <svg className="h-5 w-5 text-red-400" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                </svg>
-              </div>
-              <div className="ml-3">
-                <p className="text-sm text-red-700">{error}</p>
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* Loading State */}
         {isLoading && (
@@ -154,14 +336,10 @@ const FindHousekeeper = () => {
           </div>
         )}
 
-        {/* No Results */}
+        {/* No Results Message */}
         {!isLoading && filteredHousekeepers.length === 0 && (
-          <div className="text-center py-12">
-            <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M12 14h.01M12 17h.01M12 7a2 2 0 100-4 2 2 0 000 4z" />
-            </svg>
-            <h3 className="mt-2 text-lg font-medium text-gray-900">No housekeepers found</h3>
-            <p className="mt-1 text-sm text-gray-500">
+          <div className="text-center py-10">
+            <p className="text-gray-500 text-xl">
               {searchTerm ? 'Try a different search term or filter.' : 'There are no approved housekeepers at the moment.'}
             </p>
           </div>
@@ -176,30 +354,25 @@ const FindHousekeeper = () => {
                 <div className="flex justify-between items-start mb-4">
                   <div className="flex items-center">
                     <div className="relative">
-                      {housekeeper.photo_url ? (
+                      {housekeeper.photo_url && !failedImages[housekeeper.id] ? (
                         <img
                           src={housekeeper.photo_url}
-                          alt={housekeeper.name}
-                          className="w-16 h-16 rounded-full object-cover"
-                          onError={(e) => {
-                            e.currentTarget.style.display = 'none';
-                            e.currentTarget.parentElement!.innerHTML = getDefaultAvatar(housekeeper.name).props.outerHTML;
-                          }}
+                          alt={`${housekeeper.name}'s profile`}
+                          className="w-16 h-16 rounded-full object-cover mr-4"
+                          onError={() => handleImageError(housekeeper.id)}
                         />
                       ) : (
-                        getDefaultAvatar(housekeeper.name)
+                        <div className="mr-4">
+                          {getDefaultAvatar(housekeeper.name)}
+                        </div>
                       )}
-                      <div className="absolute -top-1 -right-1 w-6 h-6 bg-blue-600 rounded-full flex items-center justify-center">
-                        <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                        </svg>
-                      </div>
                     </div>
-                    <div className="ml-4">
+                    <div>
                       <h3 className="text-xl font-semibold text-gray-900">
                         {housekeeper.name}
                       </h3>
-                      <p className="text-gray-600 text-sm">
+                      <p className="text-gray-600 text-sm flex items-center">
+                        <FaMapMarkerAlt className="mr-1 text-gray-500" />
                         {housekeeper.location}
                       </p>
                     </div>
@@ -212,7 +385,14 @@ const FindHousekeeper = () => {
                 {/* Rating */}
                 <div className="flex items-center mb-4">
                   <div className="flex items-center">
-                    {renderStars(housekeeper.rating || 4.5)}
+                    <div className="flex">
+                      {[...Array(5)].map((_, index) => (
+                        <FaStar 
+                          key={index} 
+                          className={`w-4 h-4 ${index < Math.floor(housekeeper.rating || 4.5) ? 'text-yellow-400' : 'text-gray-300'}`} 
+                        />
+                      ))}
+                    </div>
                   </div>
                   <span className="ml-2 text-sm text-gray-600">
                     {housekeeper.rating || 4.5} ({housekeeper.reviews || 'New'})
@@ -237,11 +417,15 @@ const FindHousekeeper = () => {
                 {/* Experience and Rate */}
                 <div className="flex justify-between items-center mb-6">
                   <div>
-                    <p className="text-sm text-gray-600">Experience</p>
+                    <p className="text-sm text-gray-600 flex items-center">
+                      <FaClock className="mr-1 text-gray-500" /> Experience
+                    </p>
                     <p className="font-semibold">{housekeeper.experience}</p>
                   </div>
                   <div className="text-right">
-                    <p className="text-sm text-gray-600">Hourly Rate</p>
+                    <p className="text-sm text-gray-600 flex items-center justify-end">
+                      <FaMoneyBillWave className="mr-1 text-gray-500" /> Hourly Rate
+                    </p>
                     <p className="font-semibold text-blue-600">${housekeeper.hourly_rate}/hr</p>
                   </div>
                 </div>
@@ -270,7 +454,7 @@ const FindHousekeeper = () => {
         )}
       </div>
     </div>
-  )
-}
+  );
+};
 
-export default FindHousekeeper
+export default FindHousekeeper;
