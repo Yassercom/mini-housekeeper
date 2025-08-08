@@ -16,7 +16,9 @@ const Register = () => {
 
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({})
   const [success, setSuccess] = useState(false)
+  const [previewImage, setPreviewImage] = useState<string | null>(null)
 
   const availableServices = [
     'House Cleaning',
@@ -46,24 +48,132 @@ const Register = () => {
     }))
   }
 
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      if (!file.type.match('image.*')) {
+        setError('Veuillez sélectionner une image (JPG, PNG, etc.)')
+        return
+      }
+      
+      if (file.size > 2 * 1024 * 1024) {
+        setError('L\'image ne doit pas dépasser 2MB')
+        return
+      }
+      
+      const reader = new FileReader()
+      reader.onloadend = () => {
+        setPreviewImage(reader.result as string)
+        setFormData(prev => ({
+          ...prev,
+          photo_url: reader.result as string
+        }))
+      }
+      reader.readAsDataURL(file)
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
     setError(null)
+    setFieldErrors({})
     setSuccess(false)
     
     try {
-      // Format data for backend (convert hourly_rate from string to number)
+      const formatPhoneNumber = (value: string): string => {
+        const numbers = value.replace(/\D/g, '');
+        
+        if (numbers.length === 0) return '';
+        
+        if (numbers.length <= 2) {
+          return numbers;
+        } else if (numbers.length <= 4) {
+          return `${numbers.slice(0, 2)} ${numbers.slice(2)}`;
+        } else if (numbers.length <= 6) {
+          return `${numbers.slice(0, 2)} ${numbers.slice(2, 4)} ${numbers.slice(4)}`;
+        } else if (numbers.length <= 8) {
+          return `${numbers.slice(0, 2)} ${numbers.slice(2, 4)} ${numbers.slice(4, 6)} ${numbers.slice(6)}`;
+        } else {
+          return `${numbers.slice(0, 2)} ${numbers.slice(2, 4)} ${numbers.slice(4, 6)} ${numbers.slice(6, 8)} ${numbers.slice(8, 10)}`;
+        }
+      }
+
+      const validationErrors: Record<string, string[]> = {};
+      
+      // Validation du nom
+      if (!formData.name.trim()) {
+        validationErrors.name = ["Le nom est requis"];
+      } else if (formData.name.trim().length < 2) {
+        validationErrors.name = ["Le nom doit contenir au moins 2 caractères"];
+      }
+      
+      // Validation de l'email
+      if (!formData.email.trim()) {
+        validationErrors.email = ["L'email est requis"];
+      } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
+        validationErrors.email = ["Format d'email invalide"];
+      }
+      
+      // Validation du téléphone
+      if (!formData.phone.trim()) {
+        validationErrors.phone = ["Le numéro de téléphone est requis"];
+      } else if (formData.phone.replace(/\D/g, '').length !== 10) {
+        validationErrors.phone = ["Le numéro doit comporter 10 chiffres"];
+      }
+      
+      // Validation de la localisation
+      if (!formData.location.trim()) {
+        validationErrors.location = ["La localisation est requise"];
+      }
+      
+      // Validation de l'expérience
+      if (!formData.experience) {
+        validationErrors.experience = ["L'expérience est requise"];
+      }
+      
+      // Validation des services
+      if (formData.services.length === 0) {
+        validationErrors.services = ["Sélectionnez au moins un service"];
+      }
+      
+      // Validation du tarif horaire
+      const hourlyRate = parseFloat(formData.hourly_rate);
+      if (!formData.hourly_rate.trim()) {
+        validationErrors.hourly_rate = ["Le tarif horaire est requis"];
+      } else if (isNaN(hourlyRate)) {
+        validationErrors.hourly_rate = ["Le tarif doit être un nombre"];
+      } else if (hourlyRate < 15 || hourlyRate > 100) {
+        validationErrors.hourly_rate = ["Le tarif doit être entre 15 et 100"];
+      }
+      
+      // Si des erreurs sont détectées, ne pas soumettre le formulaire
+      if (Object.keys(validationErrors).length > 0) {
+        setFieldErrors(validationErrors);
+        setError("Veuillez corriger les erreurs dans le formulaire");
+        setIsLoading(false);
+        return;
+      }
+
       const submissionData = {
-        ...formData,
-        hourly_rate: parseFloat(formData.hourly_rate),
-        photo_url: formData.photo_url || undefined // Only send if not empty
+        name: formData.name,
+        email: formData.email,
+        phone: formatPhoneNumber(formData.phone),
+        location: formData.location,
+        experience: formData.experience,
+        bio: formData.bio,
+        services: formData.services,
+        hourlyRate: parseFloat(formData.hourly_rate),
+        photoUrl: '' // Add the property with a default value
+      }
+      
+      if (formData.photo_url && formData.photo_url.trim() !== '') {
+        submissionData.photoUrl = formData.photo_url;
       }
       
       await housekeepersAPI.register(submissionData)
       setSuccess(true)
       
-      // Reset form
       setFormData({
         name: '',
         email: '',
@@ -76,10 +186,20 @@ const Register = () => {
         bio: ''
       })
       
-      window.scrollTo(0, 0) // Scroll to top to show success message
+      window.scrollTo(0, 0) 
     } catch (err: any) {
-      setError(err.response?.data?.message || 'An error occurred during registration. Please try again.')
-      window.scrollTo(0, 0) // Scroll to top to show error message
+      if (err.response?.data?.errorDetails) {
+        setFieldErrors(err.response.data.errorDetails);
+        setError(`Veuillez corriger les erreurs dans le formulaire (${err.response.data.errorCount} erreur(s))`);
+      } else if (err.response?.data?.errors) {
+        setError(`Erreur de validation : ${err.response.data.errors}`);
+      } else if (err.response?.data?.message === 'Email already registered') {
+        setFieldErrors({ email: ['Cette adresse email est déjà enregistrée'] });
+        setError('Cette adresse e-mail est déjà enregistrée. Veuillez utiliser une autre adresse.');
+      } else {
+        setError(err.response?.data?.message || 'Une erreur est survenue lors de l\'inscription. Veuillez réessayer.');
+      }
+      window.scrollTo(0, 0) 
     } finally {
       setIsLoading(false)
     }
@@ -117,17 +237,22 @@ const Register = () => {
         )}
 
         {error && (
-          <div className="mb-8 bg-red-50 border-l-4 border-red-500 p-4 rounded-md">
-            <div className="flex">
-              <div className="flex-shrink-0">
-                <svg className="h-5 w-5 text-red-400" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                </svg>
-              </div>
-              <div className="ml-3">
-                <p className="text-sm text-red-700">{error}</p>
-              </div>
+          <div className="bg-red-50 border border-red-200 text-red-800 rounded-lg p-4 mb-6">
+            <div className="flex items-center">
+              <svg className="w-5 h-5 mr-2 text-red-600" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2h-1V9z" clipRule="evenodd" />
+              </svg>
+              <span className="font-medium">{error}</span>
             </div>
+            {Object.keys(fieldErrors).length > 0 && (
+              <ul className="list-disc list-inside mt-2 ml-6 text-sm">
+                {Object.entries(fieldErrors).map(([field, errors]) => (
+                  <li key={field} className="mt-1">
+                    <span className="font-semibold capitalize">{field.replace('_', ' ')}:</span> {errors.join(', ')}
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         )}
 
@@ -149,9 +274,14 @@ const Register = () => {
                     required
                     value={formData.name}
                     onChange={handleInputChange}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                      fieldErrors.name ? 'border-red-500' : 'border-gray-300'
+                    }`}
                     placeholder="Enter your full name"
                   />
+                  {fieldErrors.name && (
+                    <p className="text-red-600 text-sm mt-1">{fieldErrors.name[0]}</p>
+                  )}
                 </div>
                 <div>
                   <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
@@ -164,9 +294,14 @@ const Register = () => {
                     required
                     value={formData.email}
                     onChange={handleInputChange}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                      fieldErrors.email ? 'border-red-500' : 'border-gray-300'
+                    }`}
                     placeholder="Enter your email"
                   />
+                  {fieldErrors.email && (
+                    <p className="text-red-600 text-sm mt-1">{fieldErrors.email[0]}</p>
+                  )}
                 </div>
                 <div>
                   <label htmlFor="phone" className="block text-sm font-medium text-gray-700 mb-2">
@@ -179,24 +314,43 @@ const Register = () => {
                     required
                     value={formData.phone}
                     onChange={handleInputChange}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                      fieldErrors.phone ? 'border-red-500' : 'border-gray-300'
+                    }`}
                     placeholder="Enter your phone number"
                   />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Format requis: 0X XX XX XX XX
+                  </p>
+                  {fieldErrors.phone && (
+                    <p className="text-red-600 text-sm mt-1">{fieldErrors.phone[0]}</p>
+                  )}
                 </div>
                 <div>
                   <label htmlFor="location" className="block text-sm font-medium text-gray-700 mb-2">
                     Location *
                   </label>
-                  <input
-                    type="text"
+                  <select
                     id="location"
                     name="location"
                     required
                     value={formData.location}
                     onChange={handleInputChange}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="City, State"
-                  />
+                    className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                      fieldErrors.location ? 'border-red-500' : 'border-gray-300'
+                    }`}
+                  >
+                    <option value="">Select your zone/neighborhood</option>
+                    <option value="downtown">Downtown</option>
+                    <option value="uptown">Uptown</option>
+                    <option value="midtown">Midtown</option>
+                    <option value="westside">West Side</option>
+                    <option value="eastside">East Side</option>
+                    <option value="suburban">Suburban Area</option>
+                  </select>
+                  {fieldErrors.location && (
+                    <p className="text-red-600 text-sm mt-1">{fieldErrors.location[0]}</p>
+                  )}
                 </div>
                 <div>
                   <label htmlFor="experience" className="block text-sm font-medium text-gray-700 mb-2">
@@ -208,7 +362,9 @@ const Register = () => {
                     required
                     value={formData.experience}
                     onChange={handleInputChange}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                      fieldErrors.experience ? 'border-red-500' : 'border-gray-300'
+                    }`}
                   >
                     <option value="">Select experience</option>
                     <option value="0-1 year">0-1 year</option>
@@ -216,6 +372,9 @@ const Register = () => {
                     <option value="3-5 years">3-5 years</option>
                     <option value="5+ years">5+ years</option>
                   </select>
+                  {fieldErrors.experience && (
+                    <p className="text-red-600 text-sm mt-1">{fieldErrors.experience[0]}</p>
+                  )}
                 </div>
                 <div>
                   <label htmlFor="hourly_rate" className="block text-sm font-medium text-gray-700 mb-2">
@@ -230,26 +389,53 @@ const Register = () => {
                     step="0.01"
                     value={formData.hourly_rate}
                     onChange={handleInputChange}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                      fieldErrors.hourly_rate ? 'border-red-500' : 'border-gray-300'
+                    }`}
                     placeholder="25.00"
                   />
+                  {fieldErrors.hourly_rate && (
+                    <p className="text-red-600 text-sm mt-1">{fieldErrors.hourly_rate[0]}</p>
+                  )}
                 </div>
                 <div>
-                  <label htmlFor="photo_url" className="block text-sm font-medium text-gray-700 mb-2">
-                    Profile Photo URL
+                  <label htmlFor="photo" className="block text-sm font-medium text-gray-700 mb-2">
+                    Profile Photo
                   </label>
-                  <input
-                    type="url"
-                    id="photo_url"
-                    name="photo_url"
-                    value={formData.photo_url}
-                    onChange={handleInputChange}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="https://example.com/your-photo.jpg"
-                  />
-                  <p className="text-sm text-gray-500 mt-1">
-                    Optional: Add a professional photo to help clients recognize you
-                  </p>
+                  <div className="flex items-start">
+                    <div className="flex-1">
+                      <input
+                        type="file"
+                        id="photo"
+                        name="photo"
+                        accept="image/*"
+                        onChange={handleFileChange}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        Optional: JPG or PNG, max 2MB
+                      </p>
+                    </div>
+                    {previewImage && (
+                      <div className="ml-4 relative">
+                        <img 
+                          src={previewImage} 
+                          alt="Preview" 
+                          className="h-24 w-24 object-cover rounded-lg border border-gray-300" 
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPreviewImage(null)
+                            setFormData(prev => ({ ...prev, photo_url: '' }))
+                          }}
+                          className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
@@ -278,10 +464,8 @@ const Register = () => {
                   </label>
                 ))}
               </div>
-              {formData.services.length === 0 && (
-                <p className="text-sm text-red-500 mt-2">
-                  Please select at least one service
-                </p>
+              {fieldErrors.services && (
+                <p className="text-red-600 text-sm mt-1">{fieldErrors.services[0]}</p>
               )}
             </div>
 

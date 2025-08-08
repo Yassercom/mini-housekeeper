@@ -19,7 +19,8 @@ router.post('/login', validateRequest(adminLoginSchema), async (req, res) => {
     if (result.rows.length === 0) {
       return res.status(401).json({
         success: false,
-        message: 'Invalid email or password'
+        message: 'Échec de connexion : email non reconnu',
+        errorCode: 'EMAIL_NOT_FOUND'
       });
     }
 
@@ -31,26 +32,42 @@ router.post('/login', validateRequest(adminLoginSchema), async (req, res) => {
     if (!isPasswordValid) {
       return res.status(401).json({
         success: false,
-        message: 'Invalid email or password'
+        message: 'Échec de connexion : mot de passe incorrect',
+        errorCode: 'INVALID_PASSWORD'
       });
     }
 
     // Update last login
-    await query(
-      'UPDATE admins SET last_login = CURRENT_TIMESTAMP WHERE id = $1',
-      [admin.id]
-    );
+    try {
+      await query(
+        'UPDATE admins SET last_login = CURRENT_TIMESTAMP WHERE id = $1',
+        [admin.id]
+      );
+    } catch (updateError) {
+      console.error('Erreur lors de la mise à jour de la dernière connexion:', updateError);
+      // Continue with login process even if update fails
+    }
 
     // Generate JWT token
-    const token = generateToken({
-      id: admin.id,
-      email: admin.email,
-      role: admin.role
-    });
+    let token;
+    try {
+      token = generateToken({
+        id: admin.id,
+        email: admin.email,
+        role: admin.role
+      });
+    } catch (tokenError) {
+      console.error('Erreur lors de la génération du token:', tokenError);
+      return res.status(500).json({
+        success: false,
+        message: 'Erreur serveur lors de la génération du token d\'authentification',
+        errorCode: 'TOKEN_GENERATION_FAILED'
+      });
+    }
 
     res.json({
       success: true,
-      message: 'Login successful',
+      message: 'Connexion réussie',
       data: {
         admin: {
           id: admin.id,
@@ -64,10 +81,12 @@ router.post('/login', validateRequest(adminLoginSchema), async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error during admin login:', error);
+    console.error('Erreur lors de la connexion admin:', error);
     res.status(500).json({
       success: false,
-      message: 'Internal server error'
+      message: 'Erreur serveur interne. Veuillez réessayer plus tard.',
+      errorCode: 'SERVER_ERROR',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 });
