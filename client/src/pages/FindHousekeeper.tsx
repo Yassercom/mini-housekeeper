@@ -174,8 +174,8 @@ const FindHousekeeper = () => {
             <form onSubmit={applyFilters} className="bg-white rounded-lg p-4 shadow-sm">
               {/* Mode de recherche simple */}
               {!showAdvancedSearch ? (
-                <div className="grid md:grid-cols-3 gap-4">
-                  <div className="md:col-span-2">
+                <div className="grid gap-4">
+                  <div className="">
                     <div className="flex">
                       <select
                         value={regionFilter}

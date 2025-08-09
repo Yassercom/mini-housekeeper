@@ -251,6 +251,69 @@ router.patch('/:id/approve', authenticateToken, requireAdmin, validateId, async 
   }
 });
 
+// PATCH /api/housekeepers/:id/reject - Reject housekeeper (admin only)
+router.patch('/:id/reject', authenticateToken, requireAdmin, validateId, async (req, res) => {
+  try {
+    const housekeeperId = req.validatedId;
+    const adminId = req.admin.id;
+
+    // Check if housekeeper exists and is pending
+    const existingHousekeeper = await query(
+      'SELECT id, name, email, status FROM housekeepers WHERE id = $1',
+      [housekeeperId]
+    );
+
+    if (existingHousekeeper.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Housekeeper not found',
+        errorCode: 'HOUSEKEEPER_NOT_FOUND'
+      });
+    }
+
+    const housekeeper = existingHousekeeper.rows[0];
+
+    if (housekeeper.status !== 'pending') {
+      return res.status(400).json({
+        success: false,
+        message: `Housekeeper is already ${housekeeper.status}`,
+        errorCode: 'INVALID_STATUS_TRANSITION'
+      });
+    }
+
+    // Reject the housekeeper
+    const result = await query(
+      `UPDATE housekeepers 
+       SET status = 'rejected', approved_at = NULL, approved_by = $1 
+       WHERE id = $2 
+       RETURNING id, name, email, status`,
+      [adminId, housekeeperId]
+    );
+
+    const rejectedHousekeeper = result.rows[0];
+
+    res.json({
+      success: true,
+      message: 'Housekeeper rejected successfully',
+      data: {
+        id: rejectedHousekeeper.id,
+        name: rejectedHousekeeper.name,
+        email: rejectedHousekeeper.email,
+        status: rejectedHousekeeper.status
+      }
+    });
+
+  } catch (error) {
+    console.error('Error rejecting housekeeper:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      errorCode: 'SERVER_ERROR',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
 // DELETE /api/housekeepers/:id - Delete housekeeper (admin only)
 router.delete('/:id', authenticateToken, requireAdmin, validateId, async (req, res) => {
   try {

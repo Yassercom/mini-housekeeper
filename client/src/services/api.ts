@@ -81,6 +81,11 @@ export const housekeepersAPI = {
     return extractData<any>(response);
   },
   
+  reject: async (id: number | string) => {
+    const response = await api.patch(`/housekeepers/${id}/reject`);
+    return extractData<any>(response);
+  },
+  
   delete: async (id: number | string) => {
     const response = await api.delete(`/housekeepers/${id}`);
     return extractData<any>(response);

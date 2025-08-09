@@ -1,76 +1,300 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { housekeepersAPI, adminAPI } from '../services/api'
+
+// Types
+interface Housekeeper {
+  id: number;
+  name: string;
+  email: string;
+  phone: string;
+  location: string;
+  services: string[];
+  experience: string;
+  hourly_rate: number;
+  created_at: string;
+  status: string;
+}
+
+// Modal types
+type ModalType = 'approve' | 'reject' | 'delete' | null;
+
+// Stats interface
+interface Stats {
+  totalHousekeepers: number;
+  activeBookings: number;
+  pendingRegistrations: number;
+  totalRevenue: number;
+}
 
 const AdminDashboard = () => {
   const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState('registrations')
+  
+  // State for housekeepers
+  const [pendingHousekeepers, setPendingHousekeepers] = useState<Housekeeper[]>([])
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  
+  // Search state
+  const [searchTerm, setSearchTerm] = useState('')
+  const [searchFocused, setSearchFocused] = useState(false)
+  
+  // Modal state
+  const [showModal, setShowModal] = useState(false)
+  const [modalType, setModalType] = useState<ModalType>(null)
+  const [selectedHousekeeper, setSelectedHousekeeper] = useState<Housekeeper | null>(null)
+  
+  // Notification state
+  const [notification, setNotification] = useState<{
+    show: boolean;
+    message: string;
+    type: 'success' | 'error';
+  }>({
+    show: false,
+    message: '',
+    type: 'success',
+  })
 
-  // Mock data for pending registrations
-  const pendingRegistrations = [
-    {
-      id: 1,
-      name: "Emily Watson",
-      email: "emily.watson@email.com",
-      phone: "(555) 123-4567",
-      location: "Brooklyn, NY",
-      services: ["House Cleaning", "Organization"],
-      experience: "3-5 years",
-      hourlyRate: 45,
-      submittedAt: "2024-01-15",
-      status: "pending"
-    },
-    {
-      id: 2,
-      name: "Carlos Martinez",
-      email: "carlos.martinez@email.com",
-      phone: "(555) 987-6543",
-      location: "Queens, NY",
-      services: ["Cooking & Meal Prep", "Grocery Shopping"],
-      experience: "5+ years",
-      hourlyRate: 50,
-      submittedAt: "2024-01-14",
-      status: "pending"
-    },
-    {
-      id: 3,
-      name: "Aisha Johnson",
-      email: "aisha.johnson@email.com",
-      phone: "(555) 456-7890",
-      location: "Manhattan, NY",
-      services: ["Babysitting", "Light Cleaning"],
-      experience: "1-2 years",
-      hourlyRate: 30,
-      submittedAt: "2024-01-13",
-      status: "pending"
+  // Stats state - we'll fetch this from API in a real implementation
+  const [stats, setStats] = useState<Stats>({
+    totalHousekeepers: 0,
+    activeBookings: 0,
+    pendingRegistrations: 0,
+    totalRevenue: 0
+  })
+  
+  // Check authentication and fetch data on component mount
+  useEffect(() => {
+    const adminToken = localStorage.getItem('adminToken')
+    if (!adminToken) {
+      navigate('/admin/login')
+      return
     }
-  ]
-
-  // Mock data for system stats
-  const stats = {
-    totalHousekeepers: 127,
-    activeBookings: 45,
-    pendingRegistrations: 8,
-    totalRevenue: 15420
+    
+    fetchPendingHousekeepers()
+  }, [navigate])
+  
+  // Fetch pending housekeepers
+  const fetchPendingHousekeepers = async () => {
+    setIsLoading(true)
+    setError(null)
+    
+    try {
+      const data = await housekeepersAPI.getPending()
+      setPendingHousekeepers(data)
+      
+      // Update stats
+      setStats(prev => ({
+        ...prev,
+        pendingRegistrations: data.length
+      }))
+    } catch (err) {
+      console.error('Error fetching pending housekeepers:', err)
+      setError('Failed to load pending registrations. Please try again.')
+    } finally {
+      setIsLoading(false)
+    }
   }
-
+  
+  const showNotification = (message: string, type: 'success' | 'error') => {
+    setNotification({
+      show: true,
+      message,
+      type
+    })
+    
+    // Auto-hide notification after 3 seconds
+    setTimeout(() => {
+      setNotification(prev => ({ ...prev, show: false }))
+    }, 3000)
+  }
+  
+  const openModal = (type: ModalType, housekeeper: Housekeeper) => {
+    setModalType(type)
+    setSelectedHousekeeper(housekeeper)
+    setShowModal(true)
+  }
+  
+  const closeModal = () => {
+    setShowModal(false)
+    setModalType(null)
+    setSelectedHousekeeper(null)
+  }
+  
   const handleLogout = () => {
-    // TODO: Implement actual logout
-    alert('Logged out successfully!')
+    localStorage.removeItem('adminToken')
     navigate('/admin/login')
+    showNotification('Logged out successfully!', 'success')
   }
 
-  const handleApproveRegistration = (id: number) => {
-    // TODO: Implement approval logic
-    alert(`Registration ${id} approved!`)
+  const handleApproveRegistration = async () => {
+    if (!selectedHousekeeper) return
+    
+    setIsLoading(true)
+    try {
+      await housekeepersAPI.approve(selectedHousekeeper.id)
+      
+      // Remove from list and update UI
+      setPendingHousekeepers(prev => 
+        prev.filter(h => h.id !== selectedHousekeeper.id)
+      )
+      
+      showNotification(`${selectedHousekeeper.name} has been approved successfully.`, 'success')
+    } catch (err) {
+      console.error('Error approving housekeeper:', err)
+      showNotification('Failed to approve. Please try again.', 'error')
+    } finally {
+      setIsLoading(false)
+      closeModal()
+    }
   }
 
-  const handleRejectRegistration = (id: number) => {
-    // TODO: Implement rejection logic
-    alert(`Registration ${id} rejected!`)
+  const handleRejectRegistration = async () => {
+    if (!selectedHousekeeper) return
+    
+    setIsLoading(true)
+    try {
+      await housekeepersAPI.reject(selectedHousekeeper.id)
+      
+      // Remove from list and update UI
+      setPendingHousekeepers(prev => 
+        prev.filter(h => h.id !== selectedHousekeeper.id)
+      )
+      
+      showNotification(`${selectedHousekeeper.name} has been rejected.`, 'success')
+    } catch (err) {
+      console.error('Error rejecting housekeeper:', err)
+      showNotification('Failed to reject. Please try again.', 'error')
+    } finally {
+      setIsLoading(false)
+      closeModal()
+    }
+  }
+  
+  const handleDeleteRegistration = async () => {
+    if (!selectedHousekeeper) return
+    
+    setIsLoading(true)
+    try {
+      await housekeepersAPI.delete(selectedHousekeeper.id)
+      
+      // Remove from list and update UI
+      setPendingHousekeepers(prev => 
+        prev.filter(h => h.id !== selectedHousekeeper.id)
+      )
+      
+      showNotification(`${selectedHousekeeper.name} has been deleted.`, 'success')
+    } catch (err) {
+      console.error('Error deleting housekeeper:', err)
+      showNotification('Failed to delete. Please try again.', 'error')
+    } finally {
+      setIsLoading(false)
+      closeModal()
+    }
+  }
+  
+  // Format date to be more readable
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString('fr-FR', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    })
+  }
+  
+  // Filter housekeepers based on search term
+  const filteredHousekeepers = pendingHousekeepers.filter(housekeeper => 
+    housekeeper.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    housekeeper.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    housekeeper.location.toLowerCase().includes(searchTerm.toLowerCase())
+  )
+
+  // Render confirmation modal
+  const renderModal = () => {
+    if (!showModal || !selectedHousekeeper) return null
+    
+    let title = ''
+    let message = ''
+    let action = () => {}
+    let actionButtonText = ''
+    let actionButtonColor = ''
+    
+    switch (modalType) {
+      case 'approve':
+        title = 'Approve Registration'
+        message = `Are you sure you want to approve ${selectedHousekeeper.name}?`
+        action = handleApproveRegistration
+        actionButtonText = 'Approve'
+        actionButtonColor = 'bg-green-600 hover:bg-green-700'
+        break
+      case 'reject':
+        title = 'Reject Registration'
+        message = `Are you sure you want to reject ${selectedHousekeeper.name}?`
+        action = handleRejectRegistration
+        actionButtonText = 'Reject'
+        actionButtonColor = 'bg-red-600 hover:bg-red-700'
+        break
+      case 'delete':
+        title = 'Delete Registration'
+        message = `Are you sure you want to delete ${selectedHousekeeper.name}? This action cannot be undone.`
+        action = handleDeleteRegistration
+        actionButtonText = 'Delete'
+        actionButtonColor = 'bg-red-600 hover:bg-red-700'
+        break
+    }
+    
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="bg-white rounded-lg p-8 max-w-md w-full">
+          <h3 className="text-xl font-bold mb-4">{title}</h3>
+          <p className="mb-6">{message}</p>
+          <div className="flex justify-end space-x-4">
+            <button
+              onClick={closeModal}
+              className="px-4 py-2 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400 transition-colors"
+              disabled={isLoading}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={action}
+              className={`px-4 py-2 text-white rounded-lg transition-colors ${actionButtonColor}`}
+              disabled={isLoading}
+            >
+              {isLoading ? 'Processing...' : actionButtonText}
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+  
+  // Render notification toast
+  const renderNotification = () => {
+    if (!notification.show) return null
+    
+    const bgColor = notification.type === 'success' 
+      ? 'bg-green-500' 
+      : 'bg-red-500'
+    
+    return (
+      <div className={`fixed top-4 right-4 ${bgColor} text-white px-6 py-4 rounded-lg shadow-lg z-50`}>
+        {notification.message}
+      </div>
+    )
   }
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* Render modal */}
+      {renderModal()}
+      
+      {/* Render notification */}
+      {renderNotification()}
+      
       {/* Header */}
       <div className="bg-white shadow">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -110,7 +334,7 @@ const AdminDashboard = () => {
             <div className="flex items-center">
               <div className="p-2 bg-green-100 rounded-lg">
                 <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                 </svg>
               </div>
               <div className="ml-4">
@@ -128,7 +352,7 @@ const AdminDashboard = () => {
                 </svg>
               </div>
               <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Pending Reviews</p>
+                <p className="text-sm font-medium text-gray-600">Pending Registrations</p>
                 <p className="text-2xl font-bold text-gray-900">{stats.pendingRegistrations}</p>
               </div>
             </div>
@@ -138,147 +362,239 @@ const AdminDashboard = () => {
             <div className="flex items-center">
               <div className="p-2 bg-purple-100 rounded-lg">
                 <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
               </div>
               <div className="ml-4">
                 <p className="text-sm font-medium text-gray-600">Total Revenue</p>
-                <p className="text-2xl font-bold text-gray-900">${stats.totalRevenue.toLocaleString()}</p>
+                <p className="text-2xl font-bold text-gray-900">${stats.totalRevenue}</p>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Navigation Tabs */}
-        <div className="bg-white rounded-lg shadow mb-6">
-          <div className="border-b border-gray-200">
-            <nav className="-mb-px flex space-x-8 px-6">
-              <button
-                onClick={() => setActiveTab('registrations')}
-                className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                  activeTab === 'registrations'
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-              >
-                Pending Registrations
-              </button>
-              <button
-                onClick={() => setActiveTab('housekeepers')}
-                className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                  activeTab === 'housekeepers'
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-              >
-                All Housekeepers
-              </button>
-              <button
-                onClick={() => setActiveTab('bookings')}
-                className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                  activeTab === 'bookings'
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-              >
-                Bookings
-              </button>
-            </nav>
-          </div>
+        {/* Tabs */}
+        <div className="border-b border-gray-200 mb-8">
+          <nav className="-mb-px flex">
+            <button
+              onClick={() => setActiveTab('registrations')}
+              className={`py-4 px-6 font-medium text-sm ${activeTab === 'registrations'
+                ? 'border-b-2 border-blue-600 text-blue-600'
+                : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Pending Registrations
+            </button>
+            <button
+              onClick={() => setActiveTab('housekeepers')}
+              className={`py-4 px-6 font-medium text-sm ${activeTab === 'housekeepers'
+                ? 'border-b-2 border-blue-600 text-blue-600'
+                : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Housekeepers
+            </button>
+            <button
+              onClick={() => setActiveTab('bookings')}
+              className={`py-4 px-6 font-medium text-sm ${activeTab === 'bookings'
+                ? 'border-b-2 border-blue-600 text-blue-600'
+                : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Bookings
+            </button>
+          </nav>
+        </div>
 
-          {/* Tab Content */}
-          <div className="p-6">
-            {activeTab === 'registrations' && (
-              <div>
-                <h2 className="text-xl font-semibold text-gray-900 mb-6">Pending Registrations</h2>
-                <div className="space-y-4">
-                  {pendingRegistrations.map((registration) => (
-                    <div key={registration.id} className="border border-gray-200 rounded-lg p-6">
-                      <div className="flex justify-between items-start mb-4">
-                        <div>
-                          <h3 className="text-lg font-semibold text-gray-900">{registration.name}</h3>
-                          <p className="text-gray-600">{registration.email}</p>
-                          <p className="text-gray-600">{registration.phone}</p>
-                        </div>
-                        <div className="text-right">
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                            Pending Review
-                          </span>
-                          <p className="text-sm text-gray-500 mt-1">
-                            Submitted: {registration.submittedAt}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="grid md:grid-cols-2 gap-4 mb-4">
-                        <div>
-                          <p className="text-sm text-gray-600">Location:</p>
-                          <p className="font-medium">{registration.location}</p>
-                        </div>
-                        <div>
-                          <p className="text-sm text-gray-600">Experience:</p>
-                          <p className="font-medium">{registration.experience}</p>
-                        </div>
-                        <div>
-                          <p className="text-sm text-gray-600">Hourly Rate:</p>
-                          <p className="font-medium">${registration.hourlyRate}/hour</p>
-                        </div>
-                        <div>
-                          <p className="text-sm text-gray-600">Services:</p>
-                          <div className="flex flex-wrap gap-1 mt-1">
-                            {registration.services.map((service, index) => (
-                              <span
-                                key={index}
-                                className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
-                              >
-                                {service}
-                              </span>
-                            ))}
+        {/* Tab Content */}
+        <div>
+          {activeTab === 'registrations' && (
+            <div>
+              <h2 className="text-xl font-semibold text-gray-900 mb-6">Pending Registrations</h2>
+              
+              {/* Modern Search Bar */}
+              <div className="relative mb-8 w-full">
+                <div className={`flex items-center w-full bg-white rounded-lg border overflow-hidden transition-all duration-200 ${
+                  searchFocused ? 'ring-2 ring-blue-500 border-transparent shadow-lg' : 'border-gray-300'
+                }`}>
+                  <div className="pl-4 text-gray-500">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="Search by name, email, or location..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    onFocus={() => setSearchFocused(true)}
+                    onBlur={() => setSearchFocused(false)}
+                    className="flex-1 py-3 px-4 outline-none text-gray-700 placeholder-gray-500"
+                  />
+                  {searchTerm && (
+                    <button 
+                      className="p-2 hover:bg-gray-100 text-gray-600 transition-colors"
+                      onClick={() => setSearchTerm('')}
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
+              </div>
+              
+              {/* Loading state */}
+              {isLoading && !error && pendingHousekeepers.length === 0 && (
+                <div className="bg-white p-12 rounded-lg shadow flex items-center justify-center">
+                  <svg className="animate-spin h-8 w-8 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  <span className="ml-3">Loading registrations...</span>
+                </div>
+              )}
+              
+              {/* Error state */}
+              {error && (
+                <div className="bg-red-50 p-6 rounded-lg shadow border border-red-200">
+                  <div className="flex items-center">
+                    <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                    <span className="ml-3 font-medium text-red-800">{error}</span>
+                  </div>
+                  <div className="mt-4">
+                    <button 
+                      onClick={fetchPendingHousekeepers}
+                      className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700"
+                    >
+                      Try Again
+                    </button>
+                  </div>
+                </div>
+              )}
+              
+              {/* Empty state */}
+              {!isLoading && !error && pendingHousekeepers.length === 0 && (
+                <div className="bg-white p-12 rounded-lg shadow text-center">
+                  <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
+                  </svg>
+                  <h3 className="mt-2 text-lg font-medium text-gray-900">No pending registrations</h3>
+                  <p className="mt-1 text-gray-500">There are no new housekeeper registrations waiting for approval.</p>
+                </div>
+              )}
+              
+              {/* List of registrations */}
+              {!isLoading && !error && pendingHousekeepers.length > 0 && (
+                <div className="space-y-6">
+                  {filteredHousekeepers.length === 0 ? (
+                    <div className="bg-white p-8 rounded-lg shadow text-center">
+                      <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h14a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2z"></path>
+                      </svg>
+                      <h3 className="mt-2 text-lg font-medium text-gray-900">No results found</h3>
+                      <p className="mt-1 text-gray-500">Try adjusting your search criteria</p>
+                      <button 
+                        className="mt-4 inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-blue-700 bg-blue-100 hover:bg-blue-200"
+                        onClick={() => setSearchTerm('')}
+                      >
+                        Clear search
+                      </button>
+                    </div>
+                  ) : (
+                    filteredHousekeepers.map(registration => (
+                      <div key={registration.id} className="bg-white p-6 rounded-lg shadow">
+                        <div className="flex justify-between items-start mb-6">
+                          <div>
+                            <h3 className="text-lg font-medium text-gray-900">{registration.name}</h3>
+                            <p className="text-gray-600">{registration.email}</p>
+                            <p className="text-gray-600">{registration.phone}</p>
+                          </div>
+                          <div className="text-right">
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                              Pending Review
+                            </span>
+                            <p className="text-sm text-gray-500 mt-1">
+                              Submitted: {formatDate(registration.created_at)}
+                            </p>
                           </div>
                         </div>
+
+                        <div className="grid md:grid-cols-2 gap-4 mb-4">
+                          <div>
+                            <p className="text-sm text-gray-600">Location:</p>
+                            <p className="font-medium">{registration.location}</p>
+                          </div>
+                          <div>
+                            <p className="text-sm text-gray-600">Experience:</p>
+                            <p className="font-medium">{registration.experience}</p>
+                          </div>
+                          <div>
+                            <p className="text-sm text-gray-600">Hourly Rate:</p>
+                            <p className="font-medium">${registration.hourly_rate}/hour</p>
+                          </div>
+                          <div>
+                            <p className="text-sm text-gray-600">Services:</p>
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {registration.services.map((service, index) => (
+                                <span
+                                  key={index}
+                                  className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
+                                >
+                                  {service}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex gap-3">
+                          <button
+                            onClick={() => openModal('approve', registration)}
+                            className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors"
+                          >
+                            Approve
+                          </button>
+                          <button
+                            onClick={() => openModal('reject', registration)}
+                            className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors"
+                          >
+                            Reject
+                          </button>
+                          <button
+                            onClick={() => openModal('delete', registration)}
+                            className="bg-gray-200 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-300 transition-colors"
+                          >
+                            Delete
+                          </button>
+                        </div>
                       </div>
-
-                      <div className="flex gap-3">
-                        <button
-                          onClick={() => handleApproveRegistration(registration.id)}
-                          className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors"
-                        >
-                          Approve
-                        </button>
-                        <button
-                          onClick={() => handleRejectRegistration(registration.id)}
-                          className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors"
-                        >
-                          Reject
-                        </button>
-                        <button className="bg-gray-200 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-300 transition-colors">
-                          View Details
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+                    ))
+                  )}
                 </div>
-              </div>
-            )}
+              )}
+            </div>
+          )}
 
-            {activeTab === 'housekeepers' && (
-              <div>
-                <h2 className="text-xl font-semibold text-gray-900 mb-6">All Housekeepers</h2>
-                <div className="bg-gray-100 p-8 rounded-lg text-center">
-                  <p className="text-gray-600">Housekeeper management interface coming soon...</p>
-                </div>
+          {activeTab === 'housekeepers' && (
+            <div>
+              <h2 className="text-xl font-semibold text-gray-900 mb-6">All Housekeepers</h2>
+              <div className="bg-gray-100 p-8 rounded-lg text-center">
+                <p className="text-gray-600">Housekeeper management interface coming soon...</p>
               </div>
-            )}
+            </div>
+          )}
 
-            {activeTab === 'bookings' && (
-              <div>
-                <h2 className="text-xl font-semibold text-gray-900 mb-6">Booking Management</h2>
-                <div className="bg-gray-100 p-8 rounded-lg text-center">
-                  <p className="text-gray-600">Booking management interface coming soon...</p>
-                </div>
+          {activeTab === 'bookings' && (
+            <div>
+              <h2 className="text-xl font-semibold text-gray-900 mb-6">Booking Management</h2>
+              <div className="bg-gray-100 p-8 rounded-lg text-center">
+                <p className="text-gray-600">Booking management interface coming soon...</p>
               </div>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
