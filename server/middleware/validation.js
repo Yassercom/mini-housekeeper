@@ -3,7 +3,7 @@ import Joi from 'joi';
 // Validation schemas
 export const housekeeperRegistrationSchema = Joi.object({
   name: Joi.string().min(2).max(100).required(),
-  email: Joi.string().email().required(),
+  email: Joi.string().email().allow('').optional(),
   phone: Joi.string().pattern(/(^\(\d{3}\) \d{3}-\d{4}$)|(^\d{2} \d{2} \d{2} \d{2} \d{2}$)/).required(), // Accepts both US and French formats
   location: Joi.string().min(5).max(100).required(),
   experience: Joi.string().valid('Less than 1 year', '1-2 years', '3-5 years', '5+ years').required(),

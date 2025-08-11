@@ -108,10 +108,8 @@ const Register = () => {
         validationErrors.name = ["Le nom doit contenir au moins 2 caractères"];
       }
       
-      // Validation de l'email
-      if (!formData.email.trim()) {
-        validationErrors.email = ["L'email est requis"];
-      } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
+      // Validation de l'email (optionnel)
+      if (formData.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
         validationErrors.email = ["Format d'email invalide"];
       }
       
@@ -174,13 +172,16 @@ const Register = () => {
       await housekeepersAPI.register(submissionData)
       setSuccess(true)
       
+      // Conserver l'image lors de la réinitialisation du formulaire
+      const currentPhotoUrl = formData.photo_url;
+      
       setFormData({
         name: '',
         email: '',
         phone: '',
         location: '',
         experience: '',
-        photo_url: '',
+        photo_url: currentPhotoUrl, // Conserver la valeur actuelle de l'image
         services: [],
         hourly_rate: '',
         bio: ''
@@ -285,19 +286,16 @@ const Register = () => {
                 </div>
                 <div>
                   <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
-                    Email Address *
+                    Email (optionnel)
                   </label>
                   <input
                     type="email"
                     id="email"
                     name="email"
-                    required
                     value={formData.email}
                     onChange={handleInputChange}
-                    className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                      fieldErrors.email ? 'border-red-500' : 'border-gray-300'
-                    }`}
-                    placeholder="Enter your email"
+                    className={`w-full px-4 py-3 border ${fieldErrors.email ? 'border-red-500' : 'border-gray-300'} rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
+                    placeholder="your.email@example.com (optionnel)"
                   />
                   {fieldErrors.email && (
                     <p className="text-red-600 text-sm mt-1">{fieldErrors.email[0]}</p>
@@ -367,7 +365,7 @@ const Register = () => {
                     }`}
                   >
                     <option value="">Select experience</option>
-                    <option value="0-1 year">0-1 year</option>
+                    <option value="Less than 1 year">Less than 1 year</option>
                     <option value="1-2 years">1-2 years</option>
                     <option value="3-5 years">3-5 years</option>
                     <option value="5+ years">5+ years</option>

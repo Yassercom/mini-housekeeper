@@ -38,27 +38,35 @@ const FindHousekeeper = () => {
       setIsLoading(true);
       
       // D'abord, vérifier s'il y a des housekeepers approuvés dans la base
-      const allHousekeepersData = await housekeepersAPI.getAll({});
+      const allHousekeepersResponse = await housekeepersAPI.getAll({});
+      
+      // S'assurer que data est un tableau (parsing défensif)
+      const allHousekeepersData = Array.isArray(allHousekeepersResponse.data) 
+        ? allHousekeepersResponse.data 
+        : [];
       
       // Si la base ne contient aucun housekeeper approuvé
-      if (Array.isArray(allHousekeepersData) && allHousekeepersData.length === 0) {
+      if (allHousekeepersData.length === 0) {
         setHousekeepers([]);
         setError("Il n'existe aucun housekeeper approuvé dans notre base de données.");
         return;
       }
 
       // Si des housekeepers existent, appliquer les filtres
-      const housekeepersData = await housekeepersAPI.getAll({
-        region: regionFilter || undefined,
+      const response = await housekeepersAPI.getAll({
+        region: regionFilter || undefined, // Le service API ignore les régions vides
         service: serviceFilter || undefined,
         minRating: minRatingFilter > 0 ? minRatingFilter : undefined,
         maxRate: maxRateFilter < 100 ? maxRateFilter : undefined,
         search: searchFilter || undefined
       });
       
-      // Vérifier si nous avons reçu un tableau
-      if (Array.isArray(housekeepersData)) {
+      // Vérifier et extraire les données de manière défensive
+      if (response && response.data) {
+        // S'assurer que data est un tableau
+        const housekeepersData = Array.isArray(response.data) ? response.data : [];
         setHousekeepers(housekeepersData);
+        
         // Si le tableau est vide avec des filtres appliqués
         if (housekeepersData.length === 0) {
           setError("Aucun housekeeper ne correspond à vos critères de recherche");
@@ -66,7 +74,7 @@ const FindHousekeeper = () => {
           setError(null);
         }
       } else {
-        console.log('API returned unexpected data type:', housekeepersData);
+        console.log('API returned unexpected data structure:', response);
         setHousekeepers([]);
         setError("Format de données inattendu. Veuillez réessayer.");
       }

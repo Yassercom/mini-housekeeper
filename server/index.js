@@ -16,7 +16,7 @@ app.use(helmet({
   crossOriginResourcePolicy: { policy: "cross-origin" }
 }));
 app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:3000',
+  origin: true, // Permet toutes les origines en développement
   credentials: true
 }));
 app.use(express.json({ limit: '10mb' }));
@@ -139,8 +139,8 @@ const startServer = async () => {
       process.exit(1);
     }
     
-    app.listen(PORT, () => {
-      console.log(`🚀 Server running on port ${PORT}`);
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(`🚀 Server running on port ${PORT} and accessible on local network`);
       console.log(`📊 Health check: http://localhost:${PORT}/api/health`);
       console.log(`🗄️  Database test: http://localhost:${PORT}/api/db-test`);
       console.log(`📚 API Documentation: http://localhost:${PORT}/api`);

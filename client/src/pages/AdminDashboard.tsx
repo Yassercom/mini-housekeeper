@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { housekeepersAPI, adminAPI } from '../services/api'
+import { housekeepersAPI } from '../services/api'
+import HousekeeperTable from '../components/admin/HousekeeperTable'
+import { ToastContainer, toast } from 'react-toastify'
+import 'react-toastify/dist/ReactToastify.css'
 
 // Types
 interface Housekeeper {
@@ -45,16 +48,7 @@ const AdminDashboard = () => {
   const [modalType, setModalType] = useState<ModalType>(null)
   const [selectedHousekeeper, setSelectedHousekeeper] = useState<Housekeeper | null>(null)
   
-  // Notification state
-  const [notification, setNotification] = useState<{
-    show: boolean;
-    message: string;
-    type: 'success' | 'error';
-  }>({
-    show: false,
-    message: '',
-    type: 'success',
-  })
+  // Notification avec react-toastify (plus besoin d'état local)
 
   // Stats state - we'll fetch this from API in a real implementation
   const [stats, setStats] = useState<Stats>({
@@ -81,13 +75,14 @@ const AdminDashboard = () => {
     setError(null)
     
     try {
-      const data = await housekeepersAPI.getPending()
-      setPendingHousekeepers(data)
+      const response = await housekeepersAPI.getPending()
+      // Maintenant response.data contient le tableau des housekeepers
+      setPendingHousekeepers(response.data as Housekeeper[])
       
-      // Update stats
+      // Update stats avec le count ou total de la réponse API
       setStats(prev => ({
         ...prev,
-        pendingRegistrations: data.length
+        pendingRegistrations: response.total || response.count || 0
       }))
     } catch (err) {
       console.error('Error fetching pending housekeepers:', err)
@@ -98,16 +93,12 @@ const AdminDashboard = () => {
   }
   
   const showNotification = (message: string, type: 'success' | 'error') => {
-    setNotification({
-      show: true,
-      message,
-      type
-    })
-    
-    // Auto-hide notification after 3 seconds
-    setTimeout(() => {
-      setNotification(prev => ({ ...prev, show: false }))
-    }, 3000)
+    // Utiliser react-toastify au lieu de notre système personnalisé
+    if (type === 'success') {
+      toast.success(message);
+    } else {
+      toast.error(message);
+    }
   }
   
   const openModal = (type: ModalType, housekeeper: Housekeeper) => {
@@ -271,29 +262,11 @@ const AdminDashboard = () => {
       </div>
     )
   }
-  
-  // Render notification toast
-  const renderNotification = () => {
-    if (!notification.show) return null
-    
-    const bgColor = notification.type === 'success' 
-      ? 'bg-green-500' 
-      : 'bg-red-500'
-    
-    return (
-      <div className={`fixed top-4 right-4 ${bgColor} text-white px-6 py-4 rounded-lg shadow-lg z-50`}>
-        {notification.message}
-      </div>
-    )
-  }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Render modal */}
+    <div className="min-h-screen bg-gray-100">
       {renderModal()}
-      
-      {/* Render notification */}
-      {renderNotification()}
+      <ToastContainer position="top-right" autoClose={3000} hideProgressBar={false} newestOnTop closeOnClick rtl={false} pauseOnFocusLoss draggable pauseOnHover theme="light" />
       
       {/* Header */}
       <div className="bg-white shadow">
@@ -580,10 +553,8 @@ const AdminDashboard = () => {
 
           {activeTab === 'housekeepers' && (
             <div>
-              <h2 className="text-xl font-semibold text-gray-900 mb-6">All Housekeepers</h2>
-              <div className="bg-gray-100 p-8 rounded-lg text-center">
-                <p className="text-gray-600">Housekeeper management interface coming soon...</p>
-              </div>
+              <h2 className="text-xl font-semibold text-gray-900 mb-6">Gestion des Housekeepers</h2>
+              <HousekeeperTable />
             </div>
           )}
 

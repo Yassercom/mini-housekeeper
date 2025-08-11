@@ -65,7 +65,7 @@ router.post('/', validateRequest(housekeeperRegistrationSchema), async (req, res
   }
 });
 
-// GET /api/housekeepers - Get all approved housekeepers with advanced filtering
+// GET /api/housekeepers - Get housekeepers with pagination, filtering and optional status
 router.get('/', async (req, res) => {
   try {
     // Vérifier si la table housekeepers existe
@@ -79,87 +79,191 @@ router.get('/', async (req, res) => {
         success: true,
         message: 'No housekeepers found',
         data: [],
-        count: 0
+        count: 0,
+        page: 1,
+        limit: 20,
+        totalPages: 0
       });
     }
     
-    const { region, service, minRating, maxRate, search, location, experience } = req.query;
+    // Extract query parameters with defaults
+    const { 
+      status = 'approved',      // Default status filter is 'approved'
+      page = 1,                 // Default page number
+      limit = 20,               // Default items per page
+      region, 
+      service, 
+      minRating, 
+      maxRate, 
+      search, 
+      location, 
+      experience,
+      sortBy = 'created_at',    // Default sort field
+      sortOrder = 'DESC'        // Default sort order
+    } = req.query;
     
+    // Convert to numeric values
+    const pageNum = parseInt(page, 10);
+    const limitNum = parseInt(limit, 10);
+    const offset = (pageNum - 1) * limitNum;
+    
+    // Validate admin token if requesting non-approved housekeepers
+    if (status !== 'approved') {
+      try {
+        // Verify admin token if trying to access non-public data
+        const authHeader = req.headers.authorization;
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+          return res.status(401).json({
+            success: false,
+            message: 'Unauthorized access',
+            errorCode: 'UNAUTHORIZED'
+          });
+        }
+      } catch (authError) {
+        return res.status(401).json({
+          success: false,
+          message: 'Invalid or expired token',
+          errorCode: 'INVALID_TOKEN'
+        });
+      }
+    }
+    
+    // Build the base query
     let queryText = `
       SELECT id, name, email, phone, location, region, experience, hourly_rate, 
-             photo_url, bio, services, created_at, approved_at, rating
+             photo_url, bio, services, created_at, approved_at, rating, status
       FROM housekeepers 
-      WHERE status = 'approved'
+      WHERE 1=1
     `;
     
+    // Count query for pagination
+    let countQueryText = `SELECT COUNT(*) FROM housekeepers WHERE 1=1`;
+    
     const queryParams = [];
+    const countParams = [];
     let paramCount = 0;
+    
+    // Add status filter if specified and not 'all'
+    if (status && status.toLowerCase() !== 'all') {
+      paramCount++;
+      queryText += ` AND status = $${paramCount}`;
+      countQueryText += ` AND status = $${paramCount}`;
+      queryParams.push(status);
+      countParams.push(status);
+    }
 
     // Add filters - region (zone/quartier)
     if (region) {
       paramCount++;
-      queryText += ` AND (region ILIKE $${paramCount} OR location ILIKE $${paramCount})`;
+      const filterText = ` AND (region ILIKE $${paramCount} OR location ILIKE $${paramCount})`;
+      queryText += filterText;
+      countQueryText += filterText;
       queryParams.push(`%${region}%`);
+      countParams.push(`%${region}%`);
     }
     
     // Legacy location filter (backward compatibility)
     else if (location) {
       paramCount++;
-      queryText += ` AND (region ILIKE $${paramCount} OR location ILIKE $${paramCount})`;
+      const filterText = ` AND (region ILIKE $${paramCount} OR location ILIKE $${paramCount})`;
+      queryText += filterText;
+      countQueryText += filterText;
       queryParams.push(`%${location}%`);
+      countParams.push(`%${location}%`);
     }
 
     // Filter by service
     if (service) {
       paramCount++;
-      queryText += ` AND $${paramCount} = ANY(services)`;
+      const filterText = ` AND $${paramCount} = ANY(services)`;
+      queryText += filterText;
+      countQueryText += filterText;
       queryParams.push(service);
+      countParams.push(service);
     }
     
     // Filter by minimum rating
     if (minRating) {
       paramCount++;
-      queryText += ` AND rating >= $${paramCount}`;
+      const filterText = ` AND rating >= $${paramCount}`;
+      queryText += filterText;
+      countQueryText += filterText;
       queryParams.push(parseFloat(minRating));
+      countParams.push(parseFloat(minRating));
     }
 
     // Filter by maximum hourly rate
     if (maxRate) {
       paramCount++;
-      queryText += ` AND hourly_rate <= $${paramCount}`;
+      const filterText = ` AND hourly_rate <= $${paramCount}`;
+      queryText += filterText;
+      countQueryText += filterText;
       queryParams.push(parseFloat(maxRate));
+      countParams.push(parseFloat(maxRate));
     }
     
-    // Search by name (text libre)
+    // Search by name or email
     if (search) {
       paramCount++;
-      queryText += ` AND name ILIKE $${paramCount}`;
+      const filterText = ` AND (name ILIKE $${paramCount} OR email ILIKE $${paramCount})`;
+      queryText += filterText;
+      countQueryText += filterText;
       queryParams.push(`%${search}%`);
+      countParams.push(`%${search}%`);
     }
 
     // Filter by experience (backward compatibility)
     if (experience) {
       paramCount++;
-      queryText += ` AND experience = $${paramCount}`;
+      const filterText = ` AND experience = $${paramCount}`;
+      queryText += filterText;
+      countQueryText += filterText;
       queryParams.push(experience);
+      countParams.push(experience);
     }
 
-    queryText += ' ORDER BY approved_at DESC';
+    // Validate and sanitize sort parameters
+    const allowedSortFields = ['created_at', 'name', 'hourly_rate', 'rating', 'approved_at'];
+    const allowedSortOrders = ['ASC', 'DESC'];
+    
+    const sanitizedSortField = allowedSortFields.includes(sortBy) ? sortBy : 'created_at';
+    const sanitizedSortOrder = allowedSortOrders.includes(sortOrder.toUpperCase()) ? sortOrder.toUpperCase() : 'DESC';
+    
+    // Add sorting
+    queryText += ` ORDER BY ${sanitizedSortField} ${sanitizedSortOrder}`;
+    
+    // Add pagination
+    queryText += ` LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}`;
+    queryParams.push(limitNum, offset);
 
-    const result = await query(queryText, queryParams);
+    // Execute the main query and count query
+    const [result, countResult] = await Promise.all([
+      query(queryText, queryParams),
+      query(countQueryText, countParams)
+    ]);
+    
+    // Calculate total pages
+    const totalItems = parseInt(countResult.rows[0].count, 10);
+    const totalPages = Math.ceil(totalItems / limitNum);
 
     res.json({
       success: true,
-      message: 'Housekeepers retrieved successfully',
+      message: `${result.rows.length} housekeepers retrieved successfully`,
       data: result.rows,
-      count: result.rows.length
+      count: result.rows.length,
+      total: totalItems,
+      page: pageNum,
+      limit: limitNum,
+      totalPages
     });
 
   } catch (error) {
     console.error('Error fetching housekeepers:', error);
     res.status(500).json({
       success: false,
-      message: 'Internal server error'
+      message: 'Internal server error',
+      errorCode: 'SERVER_ERROR',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 });

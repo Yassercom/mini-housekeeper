@@ -25,14 +25,20 @@ const AdminLogin = () => {
       // Call the login API
       const response = await adminAPI.login({ email, password });
       
-      // Store the token in localStorage
-      localStorage.setItem('adminToken', response.data.token);
+      if (response.success && response.token) {
+        // Si la connexion est réussie, rediriger vers le dashboard
+        console.log('Connexion réussie, redirection vers le dashboard');
+        navigate('/admin/dashboard');
+        return; // Important: sortir de la fonction pour éviter d'afficher des erreurs
+      }
       
-      // Navigate to admin dashboard
-      navigate('/admin/dashboard');
+      // Si on arrive ici, c'est qu'il y a eu un problème
+      setError(response.message || 'Échec de connexion. Veuillez vérifier vos identifiants.');
+      console.error('Échec de connexion:', response);
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Login failed. Please check your credentials.');
-      console.error('Login error:', err);
+      // Erreur technique (réseau, serveur, etc.)
+      setError(err.response?.data?.message || 'Erreur technique lors de la connexion.');
+      console.error('Erreur technique:', err);
     } finally {
       setIsLoading(false);
     }
@@ -120,7 +126,12 @@ const AdminLogin = () => {
         </div>
 
         <div className="mt-8 text-center">
-          <p className="text-sm text-gray-600">
+          <div className="p-4 bg-blue-50 rounded-lg">
+            <p className="text-sm font-medium text-blue-800 mb-2">Identifiants par défaut :</p>
+            <p className="text-sm text-blue-700">Email: <span className="font-mono bg-blue-100 px-2 py-1 rounded">admin@minihousekeeper.com</span></p>
+            <p className="text-sm text-blue-700 mt-1">Mot de passe: <span className="font-mono bg-blue-100 px-2 py-1 rounded">admin123</span></p>
+          </div>
+          <p className="text-sm text-gray-600 mt-4">
             Need help? Contact system administrator
           </p>
         </div>
