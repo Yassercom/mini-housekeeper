@@ -192,6 +192,68 @@ export const adminAPI = {
   }
 };
 
+// Services API
+export const servicesAPI = {
+  getAll: async (filters?: { page?: number; limit?: number; search?: string }, token?: string) => {
+    let url = '/services';
+    if (filters) {
+      const params = new URLSearchParams();
+      if (filters.page) params.append('page', filters.page.toString());
+      if (filters.limit) params.append('limit', filters.limit.toString());
+      if (filters.search && filters.search.trim() !== '') params.append('search', filters.search);
+      
+      const queryString = params.toString();
+      if (queryString) {
+        url += `?${queryString}`;
+      }
+    }
+    
+    let headers = {};
+    if (token) {
+      headers = { Authorization: `Bearer ${token}` };
+    }
+    
+    const response = await api.get(url, { headers });
+    return extractData(response);
+  },
+
+  getById: async (id: number | string, token?: string) => {
+    let headers = {};
+    if (token) {
+      headers = { Authorization: `Bearer ${token}` };
+    }
+    const response = await api.get(`/services/${id}`, { headers });
+    return response.data;
+  },
+
+  create: async (serviceData: { name: string; description?: string; picture?: string }, token?: string) => {
+    let headers = {};
+    if (token) {
+      headers = { Authorization: `Bearer ${token}` };
+    }
+    const response = await api.post('/services', serviceData, { headers });
+    return response.data;
+  },
+
+  update: async (id: number | string, serviceData: { name: string; description?: string; picture?: string }, token?: string) => {
+    let headers = {};
+    if (token) {
+      headers = { Authorization: `Bearer ${token}` };
+    }
+    const response = await api.put(`/services/${id}`, serviceData, { headers });
+    return response.data;
+  },
+
+  delete: async (id: number | string, token?: string) => {
+    let headers = {};
+    if (token) {
+      headers = { Authorization: `Bearer ${token}` };
+    }
+    const response = await api.delete(`/services/${id}`, { headers });
+    return response.data;
+  }
+};
+
 // Health Check
 export const healthCheck = () => api.get('/health');
 

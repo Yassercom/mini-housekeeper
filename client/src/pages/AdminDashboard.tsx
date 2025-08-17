@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { housekeepersAPI } from '../services/api'
 import HousekeeperTable from '../components/admin/HousekeeperTable'
+import ServiceManagement from '../components/ServiceManagement'
 import { ToastContainer, toast } from 'react-toastify'
 import 'react-toastify/dist/ReactToastify.css'
 
@@ -368,6 +369,15 @@ const AdminDashboard = () => {
               Housekeepers
             </button>
             <button
+              onClick={() => setActiveTab('services')}
+              className={`py-4 px-6 font-medium text-sm ${activeTab === 'services'
+                ? 'border-b-2 border-blue-600 text-blue-600'
+                : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Services
+            </button>
+            <button
               onClick={() => setActiveTab('bookings')}
               className={`py-4 px-6 font-medium text-sm ${activeTab === 'bookings'
                 ? 'border-b-2 border-blue-600 text-blue-600'
@@ -555,6 +565,12 @@ const AdminDashboard = () => {
             <div>
               <h2 className="text-xl font-semibold text-gray-900 mb-6">Gestion des Housekeepers</h2>
               <HousekeeperTable />
+            </div>
+          )}
+
+          {activeTab === 'services' && (
+            <div>
+              <ServiceManagement />
             </div>
           )}
 

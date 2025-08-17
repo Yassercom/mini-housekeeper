@@ -5,6 +5,7 @@ import dotenv from 'dotenv';
 import { testConnection } from './config/database.js';
 import housekeepersRoutes from './routes/housekeepers.js';
 import adminRoutes from './routes/admin.js';
+import servicesRoutes from './routes/services.js';
 
 dotenv.config();
 
@@ -31,6 +32,7 @@ app.use((req, res, next) => {
 // API Routes
 app.use('/api/housekeepers', housekeepersRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/services', servicesRoutes);
 
 // Health check route
 app.get('/api/health', (req, res) => {
